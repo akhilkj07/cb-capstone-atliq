@@ -1,0 +1,52 @@
+{
+	"name": "atliqcommerce",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "atliqserverazure",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"schema": {
+				"type": "string"
+			},
+			"table": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "table_name",
+				"type": "nvarchar"
+			},
+			{
+				"name": "source_schema",
+				"type": "nvarchar"
+			},
+			{
+				"name": "load_type",
+				"type": "nvarchar"
+			},
+			{
+				"name": "watermark_column",
+				"type": "nvarchar"
+			},
+			{
+				"name": "last_loaded_at",
+				"type": "datetime2",
+				"scale": 0
+			}
+		],
+		"typeProperties": {
+			"schema": {
+				"value": "@dataset().schema",
+				"type": "Expression"
+			},
+			"table": {
+				"value": "@dataset().table",
+				"type": "Expression"
+			}
+		}
+	}
+}
