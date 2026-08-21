@@ -83,6 +83,118 @@
 									"value": "@equals(item().load_type,'full')",
 									"type": "Expression"
 								},
+								"ifFalseActivities": [
+									{
+										"name": "Copy incremental to blob",
+										"type": "Copy",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "AzureSqlSource",
+												"sqlReaderQuery": {
+													"value": "@concat('SELECT * FROM ',item().source_schema,'.',item().table_name,' WHERE ',item().watermark_column,' > ''',item().last_loaded_at,'''')",
+													"type": "Expression"
+												},
+												"queryTimeout": "02:00:00",
+												"partitionOption": "None"
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobStorageWriteSettings"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "atliqcommerce",
+												"type": "DatasetReference",
+												"parameters": {
+													"schema": {
+														"value": "@item().source_schema",
+														"type": "Expression"
+													},
+													"table": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													}
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "blob_parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"folder": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													},
+													"filename": {
+														"value": "@formatDateTime(variables('utctimenow'),'yyyy-MM-dd')",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"name": "update last_loaded_date",
+										"type": "Script",
+										"dependsOn": [
+											{
+												"activity": "Copy incremental to blob",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"linkedServiceName": {
+											"referenceName": "atliqserverazure",
+											"type": "LinkedServiceReference"
+										},
+										"typeProperties": {
+											"scripts": [
+												{
+													"type": "Query",
+													"text": {
+														"value": "@concat('UPDATE etl.control_table WHERE table_name = ''',item().table_name,''' SET last_loaded_at = ',variables('utctimenow'))",
+														"type": "Expression"
+													}
+												}
+											],
+											"scriptBlockExecutionTimeout": "02:00:00"
+										}
+									}
+								],
 								"ifTrueActivities": [
 									{
 										"name": "Copy full to blob",
@@ -99,18 +211,96 @@
 										"typeProperties": {
 											"source": {
 												"type": "AzureSqlSource",
-												"sqlReaderQuery": "",
 												"queryTimeout": "02:00:00",
 												"partitionOption": "None"
 											},
-											"enableStaging": false
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobStorageWriteSettings"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
 										},
 										"inputs": [
 											{
 												"referenceName": "atliqcommerce",
-												"type": "DatasetReference"
+												"type": "DatasetReference",
+												"parameters": {
+													"schema": {
+														"value": "@item().source_schema",
+														"type": "Expression"
+													},
+													"table": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													}
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "blob_parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"folder": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													},
+													"filename": {
+														"value": "@concat(item().table_name,'_snapshot_',utcNow())",
+														"type": "Expression"
+													}
+												}
 											}
 										]
+									},
+									{
+										"name": "update last loaded date",
+										"type": "Script",
+										"dependsOn": [
+											{
+												"activity": "Copy full to blob",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"linkedServiceName": {
+											"referenceName": "atliqserverazure",
+											"type": "LinkedServiceReference"
+										},
+										"typeProperties": {
+											"scripts": [
+												{
+													"type": "Query",
+													"text": {
+														"value": "@concat('UPDATE etl.control_table WHERE table_name = ''',item().table_name,''' SET last_loaded_at = ',variables('utctimenow'))",
+														"type": "Expression"
+													}
+												}
+											],
+											"scriptBlockExecutionTimeout": "02:00:00"
+										}
 									}
 								]
 							}
