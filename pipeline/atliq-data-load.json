@@ -159,8 +159,8 @@
 										]
 									},
 									{
-										"name": "update last_loaded_date",
-										"type": "Script",
+										"name": "update last loaded at -Incremental",
+										"type": "SqlServerStoredProcedure",
 										"dependsOn": [
 											{
 												"activity": "Copy incremental to blob",
@@ -177,21 +177,28 @@
 											"secureInput": false
 										},
 										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[etl].[usp_update_watermark]",
+											"storedProcedureParameters": {
+												"table_name": {
+													"value": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"run_start_at": {
+													"value": {
+														"value": "@formatDateTime(variables('utctimenow'))",
+														"type": "Expression"
+													},
+													"type": "Datetime"
+												}
+											}
+										},
 										"linkedServiceName": {
 											"referenceName": "atliqserverazure",
 											"type": "LinkedServiceReference"
-										},
-										"typeProperties": {
-											"scripts": [
-												{
-													"type": "Query",
-													"text": {
-														"value": "@concat('UPDATE etl.control_table SET last_loaded_at = ',variables('utctimenow'),'WHERE table_name = ''',item().table_name)",
-														"type": "Expression"
-													}
-												}
-											],
-											"scriptBlockExecutionTimeout": "02:00:00"
 										}
 									}
 								],
@@ -267,8 +274,8 @@
 										]
 									},
 									{
-										"name": "update last loaded date",
-										"type": "Script",
+										"name": "update last loaded at -Full",
+										"type": "SqlServerStoredProcedure",
 										"dependsOn": [
 											{
 												"activity": "Copy full to blob",
@@ -285,21 +292,28 @@
 											"secureInput": false
 										},
 										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[etl].[usp_update_watermark]",
+											"storedProcedureParameters": {
+												"table_name": {
+													"value": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"run_start_at": {
+													"value": {
+														"value": "@formatDateTime(variables('utctimenow'))",
+														"type": "Expression"
+													},
+													"type": "Datetime"
+												}
+											}
+										},
 										"linkedServiceName": {
 											"referenceName": "atliqserverazure",
 											"type": "LinkedServiceReference"
-										},
-										"typeProperties": {
-											"scripts": [
-												{
-													"type": "Query",
-													"text": {
-														"value": "@concat('UPDATE etl.control_table SET last_loaded_at = ',variables('utctimenow'),'WHERE table_name = ''',item().table_name)",
-														"type": "Expression"
-													}
-												}
-											],
-											"scriptBlockExecutionTimeout": "02:00:00"
 										}
 									}
 								]
