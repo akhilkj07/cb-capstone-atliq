@@ -186,7 +186,7 @@
 												{
 													"type": "Query",
 													"text": {
-														"value": "@concat('UPDATE etl.control_table WHERE table_name = ''',item().table_name,''' SET last_loaded_at = ',variables('utctimenow'))",
+														"value": "@concat('UPDATE etl.control_table SET last_loaded_at = ',variables('utctimenow'),'WHERE table_name = ''',item().table_name)",
 														"type": "Expression"
 													}
 												}
@@ -294,7 +294,7 @@
 												{
 													"type": "Query",
 													"text": {
-														"value": "@concat('UPDATE etl.control_table WHERE table_name = ''',item().table_name,''' SET last_loaded_at = ',variables('utctimenow'))",
+														"value": "@concat('UPDATE etl.control_table SET last_loaded_at = ',variables('utctimenow'),'WHERE table_name = ''',item().table_name)",
 														"type": "Expression"
 													}
 												}
