@@ -1,0 +1,672 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "atliq-etl"
+		},
+		"atliqserverazure_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'atliqserverazure'"
+		},
+		"atliqstorageaccount_connectionString": {
+			"type": "secureString",
+			"metadata": "Secure string for 'connectionString' of 'atliqstorageaccount'"
+		},
+		"atliqserverazure_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "atliq-server-akhil.database.windows.net"
+		},
+		"atliqserverazure_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "atliq_commerce"
+		},
+		"atliqserverazure_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "CloudSA2e32a063"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/tables load')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Set current time",
+						"type": "SetVariable",
+						"dependsOn": [],
+						"policy": {
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"variableName": "utctimenow",
+							"value": {
+								"value": "@utcNow()",
+								"type": "Expression"
+							}
+						}
+					},
+					{
+						"name": "Get tables",
+						"type": "Lookup",
+						"dependsOn": [
+							{
+								"activity": "Set current time",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "atliqcommerce",
+								"type": "DatasetReference",
+								"parameters": {
+									"schema": "etl",
+									"table": "control_table"
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "ForEach1",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "Get tables",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('Get tables').output.value",
+								"type": "Expression"
+							},
+							"activities": [
+								{
+									"name": "If Load Type is Full",
+									"type": "IfCondition",
+									"dependsOn": [],
+									"userProperties": [],
+									"typeProperties": {
+										"expression": {
+											"value": "@equals(item().load_type,'full')",
+											"type": "Expression"
+										},
+										"ifFalseActivities": [
+											{
+												"name": "Copy incremental to blob",
+												"type": "Copy",
+												"dependsOn": [],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "AzureSqlSource",
+														"sqlReaderQuery": {
+															"value": "@concat('SELECT * FROM ',item().source_schema,'.',item().table_name,' WHERE ',item().watermark_column,' > ''',item().last_loaded_at,'''')",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"sink": {
+														"type": "ParquetSink",
+														"storeSettings": {
+															"type": "AzureBlobStorageWriteSettings"
+														},
+														"formatSettings": {
+															"type": "ParquetWriteSettings"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "atliqcommerce",
+														"type": "DatasetReference",
+														"parameters": {
+															"schema": {
+																"value": "@item().source_schema",
+																"type": "Expression"
+															},
+															"table": {
+																"value": "@item().table_name",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "blob_parquet",
+														"type": "DatasetReference",
+														"parameters": {
+															"folder": {
+																"value": "@concat(item().table_name,'/',formatDateTime(variables('utctimenow'),'yyyy-MM-dd'))",
+																"type": "Expression"
+															},
+															"filename": {
+																"value": "@formatDateTime(variables('utctimenow'),'yyyy-MM-dd')",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "update last loaded at -Incremental",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "Copy incremental to blob",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[[etl].[usp_update_watermark]",
+													"storedProcedureParameters": {
+														"table_name": {
+															"value": {
+																"value": "@item().table_name",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"run_start_at": {
+															"value": {
+																"value": "@formatDateTime(variables('utctimenow'))",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "atliqserverazure",
+													"type": "LinkedServiceReference"
+												}
+											}
+										],
+										"ifTrueActivities": [
+											{
+												"name": "Copy full to blob",
+												"type": "Copy",
+												"dependsOn": [],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "AzureSqlSource",
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"sink": {
+														"type": "ParquetSink",
+														"storeSettings": {
+															"type": "AzureBlobStorageWriteSettings"
+														},
+														"formatSettings": {
+															"type": "ParquetWriteSettings"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "atliqcommerce",
+														"type": "DatasetReference",
+														"parameters": {
+															"schema": {
+																"value": "@item().source_schema",
+																"type": "Expression"
+															},
+															"table": {
+																"value": "@item().table_name",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "blob_parquet",
+														"type": "DatasetReference",
+														"parameters": {
+															"folder": {
+																"value": "@item().table_name",
+																"type": "Expression"
+															},
+															"filename": {
+																"value": "@concat(item().table_name)",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "update last loaded at -Full",
+												"type": "SqlServerStoredProcedure",
+												"dependsOn": [
+													{
+														"activity": "Copy full to blob",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"storedProcedureName": "[[etl].[usp_update_watermark]",
+													"storedProcedureParameters": {
+														"table_name": {
+															"value": {
+																"value": "@item().table_name",
+																"type": "Expression"
+															},
+															"type": "String"
+														},
+														"run_start_at": {
+															"value": {
+																"value": "@formatDateTime(variables('utctimenow'))",
+																"type": "Expression"
+															},
+															"type": "Datetime"
+														}
+													}
+												},
+												"linkedServiceName": {
+													"referenceName": "atliqserverazure",
+													"type": "LinkedServiceReference"
+												}
+											}
+										]
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"utctimenow": {
+						"type": "String"
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/atliqcommerce')]",
+				"[concat(variables('factoryId'), '/datasets/blob_parquet')]",
+				"[concat(variables('factoryId'), '/linkedServices/atliqserverazure')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/atliqcommerce')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "atliqserverazure",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"schema": {
+						"type": "string"
+					},
+					"table": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "table_name",
+						"type": "nvarchar"
+					},
+					{
+						"name": "source_schema",
+						"type": "nvarchar"
+					},
+					{
+						"name": "load_type",
+						"type": "nvarchar"
+					},
+					{
+						"name": "watermark_column",
+						"type": "nvarchar"
+					},
+					{
+						"name": "last_loaded_at",
+						"type": "datetime2",
+						"scale": 0
+					}
+				],
+				"typeProperties": {
+					"schema": {
+						"value": "@dataset().schema",
+						"type": "Expression"
+					},
+					"table": {
+						"value": "@dataset().table",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/atliqserverazure')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/atliqserverazure')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"server": "[parameters('atliqserverazure_properties_typeProperties_server')]",
+					"database": "[parameters('atliqserverazure_properties_typeProperties_database')]",
+					"encrypt": "mandatory",
+					"trustServerCertificate": false,
+					"authenticationType": "SQL",
+					"userName": "[parameters('atliqserverazure_properties_typeProperties_userName')]",
+					"password": {
+						"type": "SecureString",
+						"value": "[parameters('atliqserverazure_password')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/atliqstorageaccount')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobStorage",
+				"typeProperties": {
+					"connectionString": "[parameters('atliqstorageaccount_connectionString')]"
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/blob_parquet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "atliqstorageaccount",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"folder": {
+						"type": "string"
+					},
+					"filename": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"fileName": {
+							"value": "@dataset().filename",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@dataset().folder",
+							"type": "Expression"
+						},
+						"container": "bronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/atliqstorageaccount')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/csv load')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "ForEach1",
+						"type": "ForEach",
+						"dependsOn": [],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@variables('csvfiles')",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "Copy csv to parquet",
+									"type": "Copy",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "DelimitedTextSource",
+											"storeSettings": {
+												"type": "AzureBlobStorageReadSettings",
+												"recursive": false,
+												"wildcardFolderPath": "csvlandingzone",
+												"wildcardFileName": {
+													"value": "@concat(item(),'.csv')",
+													"type": "Expression"
+												},
+												"enablePartitionDiscovery": false
+											},
+											"formatSettings": {
+												"type": "DelimitedTextReadSettings"
+											}
+										},
+										"sink": {
+											"type": "ParquetSink",
+											"storeSettings": {
+												"type": "AzureBlobStorageWriteSettings"
+											},
+											"formatSettings": {
+												"type": "ParquetWriteSettings"
+											}
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "csv_files",
+											"type": "DatasetReference",
+											"parameters": {}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "blob_parquet",
+											"type": "DatasetReference",
+											"parameters": {
+												"folder": {
+													"value": "@item()",
+													"type": "Expression"
+												},
+												"filename": {
+													"value": "@item()",
+													"type": "Expression"
+												}
+											}
+										}
+									]
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"csvfiles": {
+						"type": "Array",
+						"defaultValue": [
+							"marketing_spend",
+							"supplier_price_list"
+						]
+					}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/csv_files')]",
+				"[concat(variables('factoryId'), '/datasets/blob_parquet')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/csv_files')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "atliqstorageaccount",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobStorageLocation",
+						"container": "csvdrops"
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"name": "spend_date",
+						"type": "String"
+					},
+					{
+						"name": "channel",
+						"type": "String"
+					},
+					{
+						"name": "campaign",
+						"type": "String"
+					},
+					{
+						"name": "spend_amount",
+						"type": "String"
+					},
+					{
+						"name": "clicks",
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/atliqstorageaccount')]"
+			]
+		}
+	]
+}
