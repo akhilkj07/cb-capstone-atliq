@@ -1,5 +1,5 @@
 {
-	"name": "atliq-data-load",
+	"name": "tables load",
 	"properties": {
 		"activities": [
 			{
@@ -74,7 +74,7 @@
 					},
 					"activities": [
 						{
-							"name": "Check Load Type",
+							"name": "If Load Type is Full",
 							"type": "IfCondition",
 							"dependsOn": [],
 							"userProperties": [],
@@ -147,7 +147,7 @@
 												"type": "DatasetReference",
 												"parameters": {
 													"folder": {
-														"value": "@item().table_name",
+														"value": "@concat(item().table_name,'/',formatDateTime(variables('utctimenow'),'yyyy-MM-dd'))",
 														"type": "Expression"
 													},
 													"filename": {
@@ -266,7 +266,7 @@
 														"type": "Expression"
 													},
 													"filename": {
-														"value": "@concat(item().table_name,'_snapshot_',utcNow())",
+														"value": "@concat(item().table_name)",
 														"type": "Expression"
 													}
 												}
